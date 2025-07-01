@@ -1,6 +1,7 @@
 include <BOSL2/std.scad>;
 include <openscad-scon/scon.scad>;
 include <constraints.scad>;
+include <numeric-methods.scad>;
 
 // SCON LIBRARY EXTENSIONS
 
