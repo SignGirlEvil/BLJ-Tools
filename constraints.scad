@@ -1,3 +1,103 @@
+function fix_val_err_func (idxs, vals) =
+    assert(is_list(idxs))
+    assert(len(idxs) == 1)
+    assert(is_list(vals))
+    let(
+        i = idxs[0],
+        target_val = vals[0]
+    )
+    function (x)
+        assert(is_list(x))
+        let(actual_val = x[i])
+        actual_val - target_val;
+
+function disp_err_func (idxs, vals) =
+    assert(is_list(idxs))
+    assert(len(idxs) == 2)
+    assert(is_list(vals))
+    let(
+        i1 = idxs[0], i2 = idxs[1],
+        target_disp = vals[0]
+    )
+    function (x)
+        assert(is_list(x))
+        let(actual_disp = x[i1] - x[i2])
+        actual_disp - target_disp;
+
+function dist_err_func (idxs, vals) =
+    assert(is_list(idxs))
+    assert(len(idxs) == 4)
+    assert(is_list(vals))
+    let(
+        ix1 = idxs[0], iy1 = idxs[1],
+        ix2 = idxs[2], iy2 = idxs[3],
+        target_dist = vals[0]
+    )
+    function (x)
+        assert(is_list(x))
+        let(
+            pt_1 = [x[ix1], x[iy1]],
+            pt_2 = [x[ix2], x[iy2]],
+            disp_vect = pt_2 - pt_1,
+            actual_dist = norm(disp_vect)
+        )
+    actual_dist - target_dist;
+
+function _punish (val, min_or_max_val, pwr) =
+    abs(val - min_or_max_val) ^ pwr;
+
+function val_in_range_err_func (idxs, vals) =
+    assert(is_list(idxs))
+    assert(len(idxs) == 1)
+    assert(is_list(vals))
+    let(
+        i = idxs[0],
+        min_val = vals[0],
+        max_val = vals[1],
+        pwr = is_undef(vals[2]) ? 2 : vals[2]
+    )
+    function (x)
+        assert(is_list(x))
+        let(
+            val = x[i],
+            punish = function (min_or_max)
+                _punish(val, min_or_max, pwr)
+        )
+        is_undef(min_val) ?
+            is_undef(max_val) ?
+                0 :
+                val > max_val ?
+                    punish(max_val) :
+                    0 :
+            val < min_val ?
+                punish(min_val) :
+                is_undef(max_val) ?
+                    0 :
+                    val > max_val ?
+                        punish(max_val) :
+                        0;
+
+function vals_rel_pos_err_func (idxs, vals) =
+    assert(is_list(idxs))
+    assert(len(idxs) == 2)
+    assert(is_list(vals))
+    let(
+        i1 = idxs[0], i2 = idxs[1],
+        pwr = vals[0],
+        target_dir = sign(vals[1])
+    )
+    function (x)
+        assert(is_list(x))
+        let(
+            val_1 = x[i1], val_2 = x[i2],
+            disp = val_1 - val_2,
+            actual_dir = sign(disp)
+        )
+        actual_dir == 0 ? 0 :
+        actual_dir == target_dir ? 0 :
+        _punish(disp, 0, pwr);
+
+/*
 include <BOSL2/std.scad>;
 
 // CONSTRAINT FUNCTIONS AND GRADIENTS
@@ -32,12 +132,6 @@ function pt_dist_res_grad_fn (ix1, iy1, ix2, iy2, dist=1) =
 
 // NUMERIC SOLVER FUNCTIONS
 
-function func_list_eval (func_list, x) =
-    [for (fn = func_list) fn(x)];
-
-function func_mat_eval (func_mat, x) =
-    [for (row = func_mat) func_list_eval(row, x)];
-
 function default_jacobian_func_mat (n) =
     repeat(function (x) 0, [n, n]);
 
@@ -59,24 +153,4 @@ function set_func_jacobian_list (func_jacobian_list, func, row, grad_funcs, idxs
         list_set(j_mat, row, list_set(
             j_mat_row, idxs, grad_funcs))
     ];
-
-function newton_raphson (func_list, j_mat, x0=undef, max_iters=50, max_abs_err=1e-7) =
-    let(
-        root = repeat(0, len(func_list)),
-        x0 = is_undef(x0) ?
-            repeat(0, len(func_list)) : x0,
-        fx0 = func_list_eval(func_list, x0),
-        Jx0 = func_mat_eval(j_mat, x0),
-        abs_err = sum(
-            [for (i = idx(fx0))
-             abs(fx0[i] - root[i])]
-        )
-    )
-    abs_err <= max_abs_err ? x0 :
-    max_iters <= 0 ? undef :
-        newton_raphson(
-            func_list, j_mat,
-            x0 - linear_solve(Jx0, fx0),
-            max_iters - 1,
-            max_abs_err
-        );
+*/

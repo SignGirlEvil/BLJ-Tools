@@ -1,0 +1,14 @@
+{
+    "parameterSets": {
+        "design default values": {
+            "Point_2_Initial_x": "-30"
+        },
+        "PT2-left": {
+            "Point_2_Initial_x": "-30"
+        },
+        "PT2-right": {
+            "Point_2_Initial_x": "0"
+        }
+    },
+    "fileFormatVersion": "1"
+}

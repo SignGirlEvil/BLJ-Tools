@@ -2,6 +2,7 @@ include <BOSL2/std.scad>;
 include <openscad-scon/scon.scad>;
 include <constraints.scad>;
 include <numeric-methods.scad>;
+include <utils.scad>;
 
 // SCON LIBRARY EXTENSIONS
 
@@ -72,10 +73,11 @@ function scon_set (scon, path, val, dist=0) =
                 
 // SKETCH SCON
 
-SKETCH_SCON = [
-    ["pts", []],
-    ["constraints", []]
-];
+function sketch_scon (pts=[], constraints=[]) =
+    [
+        ["pts", pts],
+        ["constraints", constraints]
+    ];
 
 function sketch_pts (sketch_scon) =
     scon_value(sketch_scon, ["pts"]);
@@ -90,7 +92,7 @@ function sketch_constraints (sketch_scon) =
     scon_value(sketch_scon, ["constraints"]);
 
 module begin_sketch () {
-    $sketch_scon = SKETCH_SCON;
+    $sketch_scon = sketch_scon();
     children();
 }
 
@@ -137,6 +139,14 @@ module add_pt (x=0, y=0) {
     children();
 }
 
+module add_pts (n_pts) {
+    if (n_pts > 0) {
+        add_pt() add_pts(n_pts - 1) children();
+    } else {
+        children();
+    }
+}
+
 module draw_pt (pt_scon, r=3, $fn=12, i=undef, with_name=false) {
     move(pt_xy(pt_scon)) {
         circle(r=r, $fn=$fn);
@@ -158,9 +168,23 @@ module draw_pt (pt_scon, r=3, $fn=12, i=undef, with_name=false) {
 
 FIX_X = "fix-x";
 FIX_Y = "fix-y";
+
 H_DIST = "h-dist";
 V_DIST = "v-dist";
 DIST = "dist";
+
+X_ABOVE = "x-above";
+X_BELOW = "x-below";
+X_BETWEEN = "x-between";
+
+Y_ABOVE = "y-above";
+Y_BELOW = "y-below";
+Y_BETWEEN = "y-between";
+
+ABOVE = "above";
+BELOW = "below";
+RIGHT_OF = "right-of";
+LEFT_OF = "left-of";
 
 function constraint_scon (type, idxs, vals) = [
     ["type", type],
@@ -192,22 +216,27 @@ function add_constraint (sketch_scon, constraint_scon) =
         new_constraints_list
     );
 
-module add_constraint (type, sketch_idxs, vals) {
+module add_constraint (type, sketch_idxs, vals=[]) {
     $sketch_scon =
         add_constraint(
             $sketch_scon,
-            constraint_scon(type, sketch_idxs, vals)
+            constraint_scon(
+                type,
+                force_list(sketch_idxs),
+                force_list(vals)
+            )
         );
     
     children();
 }
 
-// SKETCH SOLVING FUNCTIONS
+// SOLVING SKETCH
 
 PT_X = "pt-x";
 PT_Y = "pt-y";
 
 function _flattened_pts_list (pts_scon_list, i=0, list=[]) =
+    assert(is_list(pts_scon_list))
     i >= len(pts_scon_list) ? list :
         _flattened_pts_list(
             pts_scon_list,
@@ -218,14 +247,14 @@ function _flattened_pts_list (pts_scon_list, i=0, list=[]) =
             )
         );
 
-function _sketch_index_to_solver_index (nom_i, type, num_pts) =
-    type == PT_X ? 2 * nom_i :
-    type == PT_Y ? (2 * nom_i) + 1 :
+function _sketch_index_to_solver_index (sketch_i, type, num_pts) =
+    type == PT_X ? 2 * sketch_i :
+    type == PT_Y ? (2 * sketch_i) + 1 :
     undef;
 
-function _solver_index_to_sketch_index (sketch_i, type, num_pts) =
-    type == PT_X ? round(sketch_i / 2.0) :
-    type == PT_Y ? round((sketch_i - 1) / 2.0) :
+function _solver_index_to_sketch_index (solver_i, type, num_pts) =
+    type == PT_X ? round(solver_i / 2.0) :
+    type == PT_Y ? round((solver_i - 1) / 2.0) :
     undef;
 
 function _sketch_indices_to_solver_indices (sketch_i_list, type_list, num_pts) =
@@ -248,27 +277,25 @@ function _solver_indices_to_sketch_indices (solver_i_list, type_list, num_pts) =
             )
     ];
 
-function _is_even (x) = x % 2 == 0;
-
-function _pt_types_list (num_points, i=0, list=[]) =
+function _alt_pt_types_list (num_points, i=0, list=[]) =
         let(
-            type = _is_even(i) ? PT_X : PT_Y,
+            type = is_even(i) ? PT_X : PT_Y,
             is_final = i / 2 >= num_points
         )
         is_final ?
             list :
-            _pt_types_list(
+            _alt_pt_types_list(
                 num_points, i + 1,
                 concat(list, [type])
             );
-        
 
 function update_sketch_scon_from_solution (sketch_scon, xf, solver_idx=0, sketch_idxs=undef) =
+    assert(is_list(xf))
     let(
         sketch_idxs = is_undef(sketch_idxs) ?
             _solver_indices_to_sketch_indices(
                 count(len(xf)),
-                _pt_types_list(
+                _alt_pt_types_list(
                     sketch_num_pts(sketch_scon)
                 ),
                 sketch_num_pts(sketch_scon)
@@ -276,7 +303,7 @@ function update_sketch_scon_from_solution (sketch_scon, xf, solver_idx=0, sketch
              : sketch_idxs,
         sketch_idx = sketch_idxs[solver_idx],
         is_final = solver_idx >= len(xf),
-        is_x = _is_even(solver_idx)
+        is_x = is_even(solver_idx)
     )
     is_final ?
         sketch_scon :
@@ -295,157 +322,139 @@ function update_sketch_scon_from_solution (sketch_scon, xf, solver_idx=0, sketch
             xf, solver_idx + 1, sketch_idxs
         );
 
-function _add_fix_x_to_fj_list (fj_list, row, sketch_idx, val) =
-    let(i = _sketch_index_to_solver_index(
-            sketch_idx, PT_X, len(fj_list[0])
-        )
-    )
-    set_func_jacobian_list(
-        fj_list,
-        fix_val_res_fn(i, val),
-        row,
-        fix_val_res_grad_fn(i, val),
-        i
-    );
-
-function _add_fix_y_to_fj_list (fj_list, row, sketch_idx, val) =
-    let(i = _sketch_index_to_solver_index(
-            sketch_idx, PT_Y, len(fj_list[0])
-        )
-    )
-    set_func_jacobian_list(
-        fj_list,
-        fix_val_res_fn(i, val),
-        row,
-        fix_val_res_grad_fn(i, val),
-        i
-    );
-
-function _add_h_dist_to_fj_list (fj_list, row, sketch_idxs, h_dist) =
-    let(idxs = _sketch_indices_to_solver_indices(
-            sketch_idxs,
-            [PT_X, PT_X],
-            len(fj_list[0])
-        ),
-        ix1 = idxs[0], ix2 = idxs[1]
-    )
-    set_func_jacobian_list(
-        fj_list,
-        val_diff_res_fn(ix1, ix2, h_dist),
-        row,
-        val_diff_res_grad_fn(ix1, ix2, h_dist),
-        idxs
-    );
-
-function _add_v_dist_to_fj_list (fj_list, row, sketch_idxs, v_dist) =
-    let(idxs = _sketch_indices_to_solver_indices(
-            sketch_idxs,
-            [PT_Y, PT_Y],
-            len(fj_list[0])
-        ),
-        iy1 = idxs[0], iy2 = idxs[1]
-    )
-    set_func_jacobian_list(
-        fj_list,
-        val_diff_res_fn(iy1, iy2, v_dist),
-        row,
-        val_diff_res_grad_fn(iy1, iy2, v_dist),
-        idxs
-    );
-
-function _add_dist_to_fj_list (fj_list, row, sketch_idxs, dist) =
+function _constraint_err_func (constraint_scon) =
     let(
-        expanded_sketch_idxs = [
-            sketch_idxs[0], sketch_idxs[0],
-            sketch_idxs[1], sketch_idxs[1]
-        ],
-        idxs = _sketch_indices_to_solver_indices(
-                    expanded_sketch_idxs,
-                    _pt_types_list(4),
-                    len(fj_list[0])
+        type =
+            constraint_type(constraint_scon),
+        sketch_idxs = constraint_sketch_idxs(
+            constraint_scon
         ),
-        ix1 = idxs[0], iy1 = idxs[1],
-        ix2 = idxs[2], iy2 = idxs[3]
-    )
-    set_func_jacobian_list(
-        fj_list,
-        pt_dist_res_fn(ix1, iy1, ix2, iy2, dist),
-        row,
-        pt_dist_res_grad_fn(
-            ix1, iy1, ix2, iy2, dist
-        ),
-        idxs
-    );
-
-function _add_constraint_to_fj_list (fj_list, row, constraint_scon) =
-    let(
-        type = constraint_type(constraint_scon),
-        sketch_idxs = constraint_sketch_idxs(constraint_scon),
-        vals = constraint_vals(constraint_scon)
+        vals =
+            constraint_vals(constraint_scon)
     )
     type == FIX_X ?
-        _add_fix_x_to_fj_list(
-            fj_list, row, sketch_idxs, vals
+        fix_val_err_func(
+            _sketch_indices_to_solver_indices(
+                sketch_idxs, [PT_X]
+            ), vals
         ) :
     type == FIX_Y ?
-        _add_fix_y_to_fj_list(
-            fj_list, row, sketch_idxs, vals
+        fix_val_err_func(
+            _sketch_indices_to_solver_indices(
+                sketch_idxs, [PT_Y]
+            ), vals
         ) :
     type == H_DIST ?
-        _add_h_dist_to_fj_list(
-            fj_list, row, sketch_idxs, vals
+        disp_err_func(
+            _sketch_indices_to_solver_indices(
+                sketch_idxs, [PT_X, PT_X]
+            ), vals
         ) :
     type == V_DIST ?
-        _add_v_dist_to_fj_list(
-            fj_list, row, sketch_idxs, vals
+        disp_err_func(
+            _sketch_indices_to_solver_indices(
+                sketch_idxs, [PT_Y, PT_Y]
+            ), vals
         ) :
     type == DIST ?
-        _add_dist_to_fj_list(
-            fj_list, row, sketch_idxs, vals
+        dist_err_func(
+            _sketch_indices_to_solver_indices(
+                repeat_list_elems(sketch_idxs),
+                _alt_pt_types_list(2)
+            ), vals
         ) :
-    undef;
-        
-function solve_sketch (sketch_scon, func_jacobian_list=undef, row=0, x0=undef) =
+    function (x) 0;
+
+function _constraint_half_sq_err_func (constraint_scon) =
+    half_square_func_results(
+        _constraint_err_func(constraint_scon)
+    );
+
+function _construct_half_sq_err_func (sketch_scon, c_idx=0, hse_func=undef) =
     let(
-        x0 = is_undef(x0) ? 
-                _flattened_pts_list(
-                    sketch_pts(sketch_scon)
-                ) :
-                x0,
-        n = len(x0),
-        func_jacobian_list =
-            is_undef(func_jacobian_list) ?
-                default_func_jacobian_list(n) :
-                func_jacobian_list,
+        hse_func = is_undef(hse_func) ?
+            function (x) 0 : hse_func,
         constraints =
             sketch_constraints(sketch_scon),
-        constraint_scon = constraints[row],
-        is_final = row >= len(constraints)
+        constraint_scon = constraints[c_idx],
+        is_base_case = is_undef(constraint_scon)
     )
-    is_final ?
-        newton_raphson(
-            func_jacobian_list[0],
-            func_jacobian_list[1],
-            x0=x0
-        ) :
-        solve_sketch(
-            sketch_scon,
-            _add_constraint_to_fj_list(
-                func_jacobian_list, row,
-                constraint_scon
-            ),
-            row + 1, x0
+    is_base_case ?
+        hse_func :
+        _construct_half_sq_err_func (
+            sketch_scon, c_idx + 1,
+            add_func_results(
+                hse_func,
+                _constraint_half_sq_err_func(
+                    constraint_scon
+                )
+            )
         );
-    
+
+function _solve_sketch_mult_attempts (half_sq_err_func, xi, xf=undef, attempt=0) =
+    echo(a=attempt, xf=xf)
+    is_undef(xf) ?
+        attempt == 0 ?
+            _solve_sketch_mult_attempts(
+                half_sq_err_func, xi,
+                gradient_descent(
+                    half_sq_err_func, xi
+                ), attempt + 1
+            ) :
+        attempt == 1 ?
+            _solve_sketch_mult_attempts(
+                half_sq_err_func, xi,
+                gradient_descent(
+                    half_sq_err_func, xi,
+                    use_rand_step_mult=true
+                ), attempt + 1
+            ) :
+        attempt == 2 ?
+            _solve_sketch_mult_attempts(
+                half_sq_err_func, xi,
+                gradient_descent(
+                    half_sq_err_func, xi,
+                    use_rand_step_mult=true,
+                    iters_left=100*len(xi)
+                ), attempt + 1
+            ) :
+        attempt == 3 ?
+            _solve_sketch_mult_attempts(
+                half_sq_err_func, xi,
+                gradient_descent(
+                    half_sq_err_func, xi,
+                    use_rand_step_mult=true,
+                    iters_left=100*len(xi),
+                    return_x_if_no_iters_left=
+                        true
+                ), attempt + 1
+            ) : xi :
+    xf;
+
+function solve_sketch (sketch_scon) =
+    let(
+        half_sq_err_func = 
+            _construct_half_sq_err_func(
+                sketch_scon
+        ),
+        xi = _flattened_pts_list(
+            sketch_pts(sketch_scon)
+        ),
+        xf = _solve_sketch_mult_attempts(
+            half_sq_err_func, xi
+        )
+    )
+    update_sketch_scon_from_solution(
+        sketch_scon, xf
+    );
 
 module solve_sketch () {
-    xf = solve_sketch($sketch_scon);
-    $sketch_scon =
-        update_sketch_scon_from_solution(
-            $sketch_scon, xf
-        );
+    $sketch_scon = solve_sketch($sketch_scon);
     children();
 }
+
+
+// DRAWING SKETCH
 
 module draw_sketch (pt_r=3, pt_fn=12) {
     pts = sketch_pts($sketch_scon);

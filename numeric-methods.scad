@@ -1,3 +1,5 @@
+include <utils.scad>;
+
 function n_diff (func_to_diff, x, h=1e-4) =
     (func_to_diff(x + h) - func_to_diff(x - h)) /
     (2 * h);
@@ -55,18 +57,22 @@ function abs_total (list, tot=0, i=0) =
 
 function abs_max (list) = max(abs_list(list));
 
-function gradient_descent (func_to_gd, x, max_step=10, iters_left=100, abs_precision=1e-7, grad_h=1e-4, return_x_if_no_iters_left=false) =
+function gradient_descent (func_to_gd, x, max_step=10, iters_left=100, abs_precision=1e-7, grad_h=1e-4, use_rand_step_mult=false, return_x_if_no_iters_left=false) =
     let(
         grad = n_gradient(
             func_to_gd, x, h=grad_h
         ),
         fh = function (h)
             func_to_gd(x - (h * grad)),
-        step = ternary_search(fh, 0, max_step),
+        optimal_step =
+            ternary_search(fh, 0, max_step),
+        step = use_rand_step_mult ?
+            optimal_step * randf(0.25, 1) :
+            optimal_step,
         next_x = x - (step * grad),
         abs_grad_max = abs_max(grad)
     )
-    // echo(x, grad, abs_grad_max)
+    //echo(x=x, g=grad)
     iters_left <= 0 ? 
         (return_x_if_no_iters_left ?
             x : undef) :
@@ -76,22 +82,34 @@ function gradient_descent (func_to_gd, x, max_step=10, iters_left=100, abs_preci
             func_to_gd, next_x,
             max_step, iters_left - 1,
             abs_precision, grad_h,
+            use_rand_step_mult,
             return_x_if_no_iters_left
         );
 
-function make_rosenbrock_banana (a, b) =
-    function (x)
-        ((a - x[0]) ^ 2) +
-        (b * ((x[1] - (x[0] ^ 2)) ^ 2));
+function func_list_eval (func_list, x) =
+    [for (fn = func_list) fn(x)];
 
-function sphere_func (x, i=0, tot=0) = 
-    i >= len(x) ?
-        tot :
-        sphere_func(x, i + 1, tot + (x[i] ^ 2));
+function func_mat_eval (func_mat, x) =
+    [for (row = func_mat) func_list_eval(row, x)];
 
-function add_func_results (func_1, func_2) =
-    function (x) func_1(x) + func_2(x);
 
-function square_err_func (func) =
-    function (x) func(x) ^ 2;
-
+function newton_raphson (func_list, j_mat, x0=undef, max_iters=50, max_abs_err=1e-7) =
+    let(
+        root = repeat(0, len(func_list)),
+        x0 = is_undef(x0) ?
+            repeat(0, len(func_list)) : x0,
+        fx0 = func_list_eval(func_list, x0),
+        Jx0 = func_mat_eval(j_mat, x0),
+        abs_err = sum(
+            [for (i = idx(fx0))
+             abs(fx0[i] - root[i])]
+        )
+    )
+    abs_err <= max_abs_err ? x0 :
+    max_iters <= 0 ? undef :
+        newton_raphson(
+            func_list, j_mat,
+            x0 - linear_solve(Jx0, fx0),
+            max_iters - 1,
+            max_abs_err
+        );
