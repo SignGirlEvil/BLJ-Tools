@@ -79,6 +79,13 @@ function sketch_scon (pts=[], constraints=[]) =
         ["constraints", constraints]
     ];
 
+function is_sketch_scon (scon) =
+    !is_list(scon) ? false :
+    len(scon) != 2 ? false :
+    scon_map_has_keys(
+        scon, ["pts", "constraints"]
+    );
+
 function sketch_pts (sketch_scon) =
     scon_value(sketch_scon, ["pts"]);
 
@@ -98,10 +105,17 @@ module begin_sketch () {
 
 // POINT SCON
 
-function pt_scon (x=0, y=0) = [
-    ["x", x],
-    ["y", y]
-];
+function pt_scon (x=undef, y=undef) =
+    assert(is_num(x) || is_undef(x))
+    assert(is_num(y) || is_undef(y))
+    let(
+        x = is_undef(x) ? randf() : x,
+        y = is_undef(y) ? randf() : y
+    )
+    [
+        ["x", x],
+        ["y", y]
+    ];
 
 function is_pt_scon (scon) =
     !is_list(scon) ? false :
@@ -127,12 +141,14 @@ function add_pt (sketch_scon, pt_scon) =
     scon_set(sketch_scon, ["pts"], new_pts_list);
 
 function set_pt_x (sketch_scon, i, x) =
+    assert(is_num(x))
     scon_set(sketch_scon, ["pts", i, "x"], x);
 
 function set_pt_y (sketch_scon, i, y) =
+    assert(is_num(y))
     scon_set(sketch_scon, ["pts", i, "y"], y);
 
-module add_pt (x=0, y=0) {
+module add_pt (x=undef, y=undef) {
     $sketch_scon =
         add_pt($sketch_scon, pt_scon(x, y));
     
@@ -140,6 +156,8 @@ module add_pt (x=0, y=0) {
 }
 
 module add_pts (n_pts) {
+    assert(!is_undef(n_pts));
+    
     if (n_pts > 0) {
         add_pt() add_pts(n_pts - 1) children();
     } else {
@@ -163,6 +181,12 @@ module draw_pt (pt_scon, r=3, $fn=12, i=undef, with_name=false) {
         
     }
 }
+
+// SEG SCON
+
+function seg_scon (pt_1=undef, pt_2=undef) =
+    [];
+    
 
 // CONSTRAIN SCON
 
@@ -191,6 +215,14 @@ function constraint_scon (type, idxs, vals) = [
     ["sketch_idxs", idxs],
     ["vals", vals]
 ];
+
+function is_constraint_scon (scon) =
+    !is_list(scon) ? false :
+    len(scon) != 3 ? false :
+    scon_map_has_keys(
+        scon,
+        ["type", "sketch_idxs", "vals"]
+    );
 
 function constraint_type (constraint_scon) =
     scon_value(constraint_scon, ["type"]);
@@ -391,9 +423,41 @@ function _construct_half_sq_err_func (sketch_scon, c_idx=0, hse_func=undef) =
             )
         );
 
-function _solve_sketch_mult_attempts (half_sq_err_func, xi, xf=undef, attempt=0) =
-    echo(a=attempt, xf=xf)
-    is_undef(xf) ?
+function _construct_constraint_func_list (sketch_scon) =
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        constraints = 
+            sketch_constraints(sketch_scon),
+        func_list = [
+            for (constraint_scon = constraints)
+                _constraint_err_func(
+                    constraint_scon
+                )
+        ]
+    )
+    func_list;
+
+function _solve_sketch_mult_attempts (half_sq_err_func, xi, attempt=0,
+    max_attempts=10) =
+    let(
+        num_iters = 1000,
+        gd_result = gradient_descent(
+            half_sq_err_func, xi,
+            use_rand_step_mult=false,
+            //use_rand_step_mult=true,
+            iters_left = num_iters
+        ),
+        xf = gd_result[0],
+        solution_found = gd_result[1]
+    )
+    echo(a=attempt, xf=xf, sol_found=solution_found)
+    solution_found ? xf :
+    attempt >= max_attempts ? xf :
+    _solve_sketch_mult_attempts(
+        half_sq_err_func, xf,
+        attempt + 1
+    );
+/*
         attempt == 0 ?
             _solve_sketch_mult_attempts(
                 half_sq_err_func, xi,
@@ -430,7 +494,9 @@ function _solve_sketch_mult_attempts (half_sq_err_func, xi, xf=undef, attempt=0)
                 ), attempt + 1
             ) : xi :
     xf;
+*/
 
+/*
 function solve_sketch (sketch_scon) =
     let(
         half_sq_err_func = 
@@ -444,6 +510,28 @@ function solve_sketch (sketch_scon) =
             half_sq_err_func, xi
         )
     )
+    update_sketch_scon_from_solution(
+        sketch_scon, xf
+    );
+*/
+
+function solve_sketch (sketch_scon) =
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        err_func_list = 
+            _construct_constraint_func_list(
+                sketch_scon
+            ),
+        xi = _flattened_pts_list(
+            sketch_pts(sketch_scon)
+        ),
+        solver_return = n_newton_raphson(
+            err_func_list, xi
+        ),
+        xf = solver_return[0],
+        solved = solver_return[1]
+    )
+    echo(solved=solved)
     update_sketch_scon_from_solution(
         sketch_scon, xf
     );

@@ -1,5 +1,9 @@
 function is_even (x) = x % 2 == 0;
 
+function rad_to_deg (r) = 180 * r / PI;
+
+function deg_to_rad (d) = PI * d / 180;
+
 function make_rosenbrock_banana (a, b) =
     function (x)
         ((a - x[0]) ^ 2) +

@@ -1,7 +1,7 @@
 include <../sketch.scad>;
 
-Point_2_Initial_x = 0; // [-30, 0]
-Point_3_Initial_y = -15; // [-15, 5]
+Point_2_Initial_x = -30; // [-30, 10]
+Point_3_Initial_y = -20; // [-20, 20]
 
 begin_sketch()
     // Create four points
@@ -9,7 +9,7 @@ begin_sketch()
     add_pt(Point_2_Initial_x)
     add_pt(y=Point_3_Initial_y)
     
-    // Fix pt-0 to (-10, 5)
+    // Fix pt-0 to (-10, 15)
     add_constraint(FIX_X, 0, -10)
     add_constraint(FIX_Y, 0, 15)
     
@@ -23,8 +23,10 @@ begin_sketch()
     add_constraint(FIX_Y, 2, 0)
     add_constraint(DIST, [2, 0], 25)
     
-    add_constraint(H_DIST, [3, 1], 0)
-    add_constraint(DIST, [3, 2], 10)
+    // Set pt-3 to be 5 units left of pt-1
+    // and 31.623 units away from pt-2
+    add_constraint(H_DIST, [3, 1], -5)
+    add_constraint(DIST, [3, 2], 10 * sqrt(10))
     
     solve_sketch()
     draw_sketch(1);
