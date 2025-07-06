@@ -1,8 +1,70 @@
+// LIST UTILITY
+
+function list_append (list, val) =
+    concat(list, [val]);
+
+/*
+function list_slice (list, start=undef, step=undef, end=undef) =
+    assert(is_list(list))
+    let(
+        n = len(list),
+        start = default(start, 0),
+        step = default(step, 1),
+        end = default(end, n - 1)
+    )
+    assert(all_are_int([start, step, end]))
+  */
+
+function list_pop (list) =
+    assert(is_list(list))
+    assert(len(list) > 0, "Nothing to pop")
+    len(list) == 1 ?
+        [list[0], []] :
+        [
+            list[0],
+            [for (i = [1 : len(list) - 1])
+                list[i]]
+        ];
+
+
+// CHECKERS
+
 function is_even (x) = x % 2 == 0;
+
+function is_int (x) =
+    !is_num(x) ? false : x == round(x);
+
+function default (val, default_val) =
+    is_undef(val) ? default_val : val;
+
+function all_are_def (list) =
+    all_meet_condition(
+        list, function (x) !is_undef(x)
+    );
+
+function all_are_int (list) = 
+    all_meet_condition(
+        list, function (x) is_int(x)
+    );
+
+function all_meet_condition (list, cond_fn, i=0) =
+    assert(is_function(cond_fn))
+    assert(is_list(list))
+    i >= len(list) ? true :
+    !cond_fn(list[i]) ? false :
+    all_meet_condition(list, cond_fn, i + 1);
+
+// MATH
 
 function rad_to_deg (r) = 180 * r / PI;
 
 function deg_to_rad (d) = PI * d / 180;
+
+function normalized (vec) =
+    assert(is_list(vec))
+    vec / norm(vec);
+
+// FUNCTION
 
 function make_rosenbrock_banana (a, b) =
     function (x)

@@ -1,0 +1,21 @@
+{
+    "parameterSets": {
+        "Solution 1": {
+            "Point_2_Initial_x": "0",
+            "Point_3_Initial_y": "-20"
+        },
+        "Solution 2": {
+            "Point_2_Initial_x": "0",
+            "Point_3_Initial_y": "20"
+        },
+        "Solution 3": {
+            "Point_2_Initial_x": "10",
+            "Point_3_Initial_y": "-20"
+        },
+        "Solution 4": {
+            "Point_2_Initial_x": "10",
+            "Point_3_Initial_y": "20"
+        }
+    },
+    "fileFormatVersion": "1"
+}

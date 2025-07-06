@@ -1,4 +1,4 @@
-include <utils.scad>;
+include <../utils.scad>;
 include <BOSL2/std.scad>;
 
 function is_func_list (func_list, i=0) =

@@ -1,4 +1,4 @@
-include <../sketch.scad>;
+include <../sketch/all.scad>;
 
 Point_2_Initial_x = -30; // [-30, 10]
 Point_3_Initial_y = -20; // [-20, 20]

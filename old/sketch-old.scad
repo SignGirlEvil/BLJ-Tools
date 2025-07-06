@@ -1,8 +1,8 @@
 include <BOSL2/std.scad>;
 include <openscad-scon/scon.scad>;
 include <constraints.scad>;
-include <numeric-methods.scad>;
-include <utils.scad>;
+include <../math/numeric-methods.scad>;
+include <../utils.scad>;
 
 // SCON LIBRARY EXTENSIONS
 
@@ -42,9 +42,6 @@ function scon_list_set (scon_list, idx, val) =
             i == idx ? val : scon_list[i]
     ];
 
-function list_append (list, val) =
-    concat(list, [val]);
-
 function scon_set (scon, path, val, dist=0) =
     let(
         base_case = dist >= len(path),
@@ -70,47 +67,135 @@ function scon_set (scon, path, val, dist=0) =
                     val, dist + 1
                 )
             );
-                
+
+// LIST UTILITY
+
+function list_append (list, val) =
+    concat(list, [val]);
+
+/*
+function list_slice (list, start=undef, step=undef, end=undef) =
+    assert(is_list(list))
+    let(
+        n = len(list),
+        start = default(start, 0),
+        step = default(step, 1),
+        end = default(end, n - 1)
+    )
+    assert(all_are_int([start, step, end]))
+  */
+
+function list_pop (list) =
+    assert(is_list(list))
+    assert(len(list) > 0, "Nothing to pop")
+    len(list) == 1 ?
+        [list[0], []] :
+        [
+            list[0],
+            [for (i = [1 : len(list) - 1])
+                list[i]]
+        ];
+
 // SKETCH SCON
 
-function sketch_scon (pts=[], constraints=[]) =
+function sketch_scon (pts=[], segs=[],  constraints=[]) =
     [
         ["pts", pts],
+        ["segs", segs],
         ["constraints", constraints]
     ];
 
 function is_sketch_scon (scon) =
     !is_list(scon) ? false :
-    len(scon) != 2 ? false :
+    len(scon) != 3 ? false :
     scon_map_has_keys(
-        scon, ["pts", "constraints"]
+        scon, ["pts", "segs", "constraints"]
     );
 
 function sketch_pts (sketch_scon) =
+    assert(is_sketch_scon(sketch_scon))
     scon_value(sketch_scon, ["pts"]);
 
 function sketch_pt (sketch_scon, pt_idx=0) =
+    assert(is_sketch_scon(sketch_scon))
     scon_value(sketch_scon, ["pts", pt_idx]);
 
 function sketch_num_pts (sketch_scon) =
+    assert(is_sketch_scon(sketch_scon))
     len(sketch_pts(sketch_scon));
+
+function sketch_segs (sketch_scon) =
+    assert(is_sketch_scon(sketch_scon))
+    scon_value(sketch_scon, ["segs"]);
+
+function sketch_seg (sketch_scon, seg_idx=0) =
+    assert(is_sketch_scon(sketch_scon))
+    scon_value(sketch_scon, ["segs", seg_idx]);
+
+function sketch_num_segs (sketch_scon) =
+    assert(is_sketch_scon(sketch_scon))
+    len(sketch_segs(sketch_scon));
 
 function sketch_constraints (sketch_scon) =
     scon_value(sketch_scon, ["constraints"]);
+
+function sketch_constraint (sketch_scon, c_idx=0) =
+    assert(is_int(c_idx))
+    assert(c_idx >= 0)
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        constraints =
+            sketch_constraints(sketch_scon)
+    )
+    assert(c_idx < len(constraints))
+    scon_value(
+        sketch_scon, ["constraints", c_idx]
+    );
+
+function _sketch_seed (sketch_scon) =
+    sketch_num_pts(sketch_scon);
 
 module begin_sketch () {
     $sketch_scon = sketch_scon();
     children();
 }
 
+module draw_sketch (pt_r=3, seg_w=2, pt_fn=12) {
+    num_pts = sketch_num_pts($sketch_scon);
+    
+    if (num_pts > 0) {
+        for (i = [0: num_pts - 1]) {
+            draw_pt(
+                $sketch_scon, i,
+                r=pt_r, $fn=pt_fn,
+                with_name=true
+            );
+        }
+    }
+    
+    num_segs = sketch_num_segs($sketch_scon);
+    
+    if (num_segs > 0) {
+        for (i = [0: num_segs - 1]) {
+            draw_seg(
+                $sketch_scon, i, w=seg_w,
+                with_name=true
+            );
+        }
+    }
+    
+    children();
+}
+
 // POINT SCON
 
-function pt_scon (x=undef, y=undef) =
+function pt_scon (x=undef, y=undef, seed=undef) =
     assert(is_num(x) || is_undef(x))
     assert(is_num(y) || is_undef(y))
     let(
-        x = is_undef(x) ? randf() : x,
-        y = is_undef(y) ? randf() : y
+        seed = is_undef(seed) ? randf() : seed,
+        x = is_undef(x) ? randf(seed=seed) : x,
+        y = is_undef(y) ? randf(seed=seed) : y
     )
     [
         ["x", x],
@@ -148,31 +233,77 @@ function set_pt_y (sketch_scon, i, y) =
     assert(is_num(y))
     scon_set(sketch_scon, ["pts", i, "y"], y);
 
-module add_pt (x=undef, y=undef) {
+module add_pt (x=undef, y=undef, fixed=false) {
+    assert(is_list(fixed) || is_bool(fixed));
+    
+    fixed_list = is_list(fixed) ?
+        fixed : [fixed, fixed];
+    
+    assert(!(fixed[0] && is_undef(x)),
+        "Cannot fix x with undefined starting x-coordinate"
+    );
+    
+    assert(!(fixed[1] && is_undef(y)),
+        "Cannot fix y with undefined starting y-coordinate"
+    );
+    
+    seed = _sketch_seed($sketch_scon);
+    
     $sketch_scon =
-        add_pt($sketch_scon, pt_scon(x, y));
+        add_pt(
+            $sketch_scon, pt_scon(x, y, seed)
+        );
     
-    children();
-}
-
-module add_pts (n_pts) {
-    assert(!is_undef(n_pts));
+    i = sketch_num_pts($sketch_scon) - 1;
     
-    if (n_pts > 0) {
-        add_pt() add_pts(n_pts - 1) children();
+    if (fixed_list == [true, true]) {
+        add_constraint(FIX_X, [i], [x])
+        add_constraint(FIX_Y, [i], [y])
+        children();
+    } else if (fixed_list == [true, false]) {
+        add_constraint(FIX_X, [i], [x])
+        children();
+    } else if (fixed_list == [false, true]) {
+        add_constraint(FIX_Y, [i], [y])
+        children();
     } else {
         children();
     }
 }
 
-module draw_pt (pt_scon, r=3, $fn=12, i=undef, with_name=false) {
+module add_pts (n_pts_or_coords_list) {
+    assert(!is_undef(n_pts_or_coords_list));
+    
+    arg_is_int = is_int(n_pts_or_coords_list);
+    arg_is_list = is_list(n_pts_or_coords_list);
+    
+    assert(arg_is_list || arg_is_int);
+    
+    if (arg_is_int) {
+        n_pts = n_pts_or_coords_list;
+        
+        if (n_pts > 0) {
+            add_pt()
+            add_pts(n_pts - 1)
+            children();
+        } else {
+            children();
+        }
+    } else {
+        
+    }
+}
+
+module draw_pt (sketch_scon, pt_idx, r=3, $fn=12, with_name=false) {
+    pt_scon = sketch_pt(sketch_scon, pt_idx);
+    
     move(pt_xy(pt_scon)) {
         circle(r=r, $fn=$fn);
         
-        if (with_name && is_def(i)) {
-            fwd(1.25 * r)
+        if (with_name) {
+            fwd(1.25 * r) up(1) color("green")
                 text(
-                    str("pt-", i),
+                    str("pt-", pt_idx),
                     size=1.5 * r,
                     halign="center",
                     valign="top"
@@ -184,9 +315,127 @@ module draw_pt (pt_scon, r=3, $fn=12, i=undef, with_name=false) {
 
 // SEG SCON
 
-function seg_scon (pt_1=undef, pt_2=undef) =
-    [];
+function seg_scon (start, end) =
+    assert(is_int(start))
+    assert(is_int(end))
+    [
+        ["start", start],
+        ["end",   end]
+    ];
     
+function is_seg_scon (scon) =
+    !is_list(scon) ? false :
+    len(scon) != 2 ? false :
+    scon_map_has_keys(
+        scon,
+        ["start", "end"]
+    );
+
+function add_seg (sketch_scon, seg_scon) =
+    assert(is_sketch_scon(sketch_scon))
+    assert(is_seg_scon(seg_scon))
+    let(
+        old_segs_list =
+            sketch_segs(sketch_scon),
+        new_segs_list =
+            list_append(old_segs_list, seg_scon)
+    )
+    scon_set(
+        sketch_scon, ["segs"], new_segs_list
+    );
+
+function seg_start_id (seg_scon) =
+    assert(is_seg_scon(seg_scon))
+    scon_value(seg_scon, ["start"]);
+
+function seg_end_id (seg_scon) =
+    assert(is_seg_scon(seg_scon))
+    scon_value(seg_scon, ["end"]);
+
+function seg_pt_indices (seg_scon) =
+    assert(is_seg_scon(seg_scon))
+    [
+        seg_start_id(seg_scon),
+        seg_end_id(seg_scon)
+    ];
+
+function seg_pt_xys (sketch_scon, seg_id) =
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        seg_scon =
+            sketch_seg(sketch_scon, seg_id),
+        start_id = seg_start_id(seg_scon),
+        end_id = seg_end_id(seg_scon),
+        start_xy = pt_xy(
+            sketch_pt(sketch_scon, start_id)
+        ),
+        end_xy = pt_xy(
+            sketch_pt(sketch_scon, end_id)
+        )
+    )
+    [start_xy, end_xy];
+
+function seg_direction (sketch_scon, seg_id) =
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        pt_xys = seg_pt_xys(sketch_scon, seg_id),
+        start_xy = pt_xys[0],
+        end_xy = pt_xys[1],
+        diff = end_xy - start_xy
+    )
+    normalized(diff);
+
+function seg_angle (sketch_scon, seg_id) =
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        dir = seg_direction(
+            sketch_scon, seg_id
+        )
+    )
+    atan2(dir[1], dir[0]);
+
+function seg_length (sketch_scon, seg_id) =
+    assert(is_sketch_scon(sketch_scon))
+    let(
+        pt_xys = seg_pt_xys(sketch_scon, seg_id),
+        start_xy = pt_xys[0],
+        end_xy = pt_xys[1],
+        diff = end_xy - start_xy
+    )
+    norm(diff);
+
+module add_seg (start, end) {
+    $sketch_scon =
+        add_seg(
+            $sketch_scon, seg_scon(start, end)
+        );
+    
+    children();
+}
+
+module draw_seg (sketch_scon, seg_id, w=3, with_name=false) {
+    seg_pt_xys = 
+        seg_pt_xys(sketch_scon, seg_id);
+    
+    start = seg_pt_xys[0];
+    end = seg_pt_xys[1];
+    mid = 0.5 * (start + end);
+    angle = seg_angle(sketch_scon, seg_id);
+    length = seg_length(sketch_scon, seg_id);
+    
+    move(mid) rotate(angle) {
+        square([length, w], center=true);
+        if (with_name) {
+            fwd(1.25 * w) up(1) color("green")
+                text(
+                    str("seg-", seg_id),
+                    size=2.0 * w,
+                    halign="center",
+                    valign="top"
+                );
+        }
+    }
+}
 
 // CONSTRAIN SCON
 
@@ -249,6 +498,7 @@ function add_constraint (sketch_scon, constraint_scon) =
     );
 
 module add_constraint (type, sketch_idxs, vals=[]) {
+    //echo(type=type, idxs=sketch_idxs, vals=vals);
     $sketch_scon =
         add_constraint(
             $sketch_scon,
@@ -450,7 +700,7 @@ function _solve_sketch_mult_attempts (half_sq_err_func, xi, attempt=0,
         xf = gd_result[0],
         solution_found = gd_result[1]
     )
-    echo(a=attempt, xf=xf, sol_found=solution_found)
+    //echo(a=attempt, xf=xf, sol_found=solution_found)
     solution_found ? xf :
     attempt >= max_attempts ? xf :
     _solve_sketch_mult_attempts(
@@ -538,22 +788,5 @@ function solve_sketch (sketch_scon) =
 
 module solve_sketch () {
     $sketch_scon = solve_sketch($sketch_scon);
-    children();
-}
-
-
-// DRAWING SKETCH
-
-module draw_sketch (pt_r=3, pt_fn=12) {
-    pts = sketch_pts($sketch_scon);
-    
-    for (i = idx(pts)) {
-        let (pt_scon = pts[i])
-            draw_pt(
-                pt_scon, r=pt_r, $fn=pt_fn,
-                i=i, with_name=true
-            );
-    }
-    
     children();
 }
